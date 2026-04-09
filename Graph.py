@@ -1,4 +1,7 @@
 import os
+import time
+import math
+import heapq
 
 
 class Node:
@@ -22,7 +25,6 @@ class Graph:
         self._nodes[vertex_label] = Node(vertex_label)
 
     def add_edge(self, u, v, weight=0):
-        """Adds an edge. Weight is optional, default 0 if weighted[cite: 65]."""
         if u not in self._nodes or v not in self._nodes:
             raise ValueError("Both vertices must exist.")
         if u == v:
@@ -76,7 +78,6 @@ class Graph:
         del self._nodes[label]
 
     def set_weight(self, u, v, weight):
-        """Sets the weight for an edge. Raises error if not weighted[cite: 63, 64]."""
         if not self.weighted:
             raise ValueError("Graph is unweighted.")
         if u in self._nodes and v in self._nodes[u].out_neighbors:
@@ -87,7 +88,6 @@ class Graph:
             raise ValueError("Edge does not exist.")
 
     def get_weight(self, u, v):
-        """Returns edge weight. Raises exception if missing or unweighted[cite: 67, 68]."""
         if not self.weighted:
             raise ValueError("Graph is unweighted.")
         if u in self._nodes and v in self._nodes[u].out_neighbors:
@@ -95,7 +95,6 @@ class Graph:
         raise ValueError("Edge does not exist.")
 
     def change_if_directed(self, directed):
-        """Changes directed state[cite: 55]."""
         if self.directed == directed: return
         self.directed = directed
 
@@ -108,12 +107,10 @@ class Graph:
                         if self.weighted:
                             self._weights[(v, u)] = self._weights.get((u, v), 0)
             self._num_edges = sum(len(n.out_neighbors) for n in self._nodes.values()) // 2
-
         else:  # Undirected to Directed
             self._num_edges = sum(len(n.out_neighbors) for n in self._nodes.values())
 
     def change_if_weighted(self, weighted):
-        """Changes weighted state. Resets to 0 or removes weights[cite: 60, 61, 62]."""
         if self.weighted == weighted: return
         self.weighted = weighted
 
@@ -146,7 +143,6 @@ class Graph:
         return len(self._nodes)
 
     def __str__(self):
-        """Prints graph properties correctly on the first line[cite: 54, 66]."""
         dir_str = "directed" if self.directed else "undirected"
         weight_str = "weighted" if self.weighted else "unweighted"
         result = [f"{dir_str} {weight_str}"]
@@ -168,7 +164,6 @@ class Graph:
 
     @classmethod
     def create_from_file(cls, filename):
-        """Creates a graph with data read from a file[cite: 86]."""
         if not os.path.exists(filename): raise FileNotFoundError()
         with open(filename, 'r') as f:
             lines = [line.strip() for line in f if line.strip()]
@@ -195,17 +190,168 @@ class Graph:
         return graph
 
 
-# --- ITERATORS ---
+# --- ASSIGNMENT 3: ALGORITHMS & HELPERS ---
 
+class PerformanceCounters:
+    def __init__(self):
+        self.cost_calls = 0
+        self.pq_push = 0
+        self.pq_pop = 0
+
+
+def load_positions(filename):
+    """Reads the vertex positions from the auxiliary CSV-like file."""
+    positions = {}
+    if not os.path.exists(filename):
+        print(f"Warning: {filename} not found.")
+        return positions
+
+    with open(filename, 'r') as f:
+        lines = f.readlines()
+        for line in lines[1:]:  # Skip header
+            parts = line.strip().split(',')
+            if len(parts) == 3:
+                positions[parts[0]] = (float(parts[1]), float(parts[2]))
+    return positions
+
+
+def heuristic(u, v, positions):
+    """Euclidean distance heuristic for A*."""
+    if u not in positions or v not in positions:
+        return 0
+    x1, y1 = positions[u]
+    x2, y2 = positions[v]
+    return math.sqrt((x1 - x2) ** 2 + (y1 - y2) ** 2)
+
+
+def a_star(graph, start, target, positions):
+    """
+    Time Complexity: O(E log V) in worst-case with a binary heap priority queue.
+    Space Complexity: O(V) for tracking distances and parents.
+    """
+    counters = PerformanceCounters()
+    pq = []
+
+    # Priority Queue tuple format: (f_score, g_score, vertex_label)
+    heapq.heappush(pq, (heuristic(start, target, positions), 0, start))
+    counters.pq_push += 1
+
+    dist = {start: 0}
+    parent = {start: None}
+
+    start_time = time.perf_counter()
+    found = False
+
+    while pq:
+        f, g, current = heapq.heappop(pq)
+        counters.pq_pop += 1
+
+        # Stop early once we find the terminal vertex.
+        if current == target:
+            found = True
+            break
+
+        # Ignore outdated entries in the priority queue
+        if g > dist.get(current, float('inf')):
+            continue
+
+        for neighbor in graph.neighbors(current):
+            counters.cost_calls += 1
+            cost = graph.get_weight(current, neighbor)
+            tentative_g = dist[current] + cost
+
+            if tentative_g < dist.get(neighbor, float('inf')):
+                dist[neighbor] = tentative_g
+                parent[neighbor] = current
+                f_score = tentative_g + heuristic(neighbor, target, positions)
+
+                heapq.heappush(pq, (f_score, tentative_g, neighbor))
+                counters.pq_push += 1
+
+    end_time = time.perf_counter()
+
+    # Reconstruct path
+    path = []
+    if found or target in parent:
+        curr = target
+        while curr is not None:
+            path.append(curr)
+            curr = parent.get(curr)
+        path.reverse()
+
+    return {
+        'cost': dist.get(target, float('inf')),
+        'path': path,
+        'time_ms': (end_time - start_time) * 1000,
+        'counters': counters
+    }
+
+
+def bellman_ford(graph, start, target):
+    """
+    Time Complexity: O(V * E)
+    Space Complexity: O(V) tracking distances and parents.
+    """
+    counters = PerformanceCounters()
+    dist = {v: float('inf') for v in graph.get_vertices()}
+    dist[start] = 0
+    parent = {start: None}
+
+    start_time = time.perf_counter()
+    V = graph.get_v()
+
+    for i in range(V - 1):
+        any_changes = False
+        for u in graph.get_vertices():
+            if dist[u] == float('inf'): continue
+            for v in graph.neighbors(u):
+                counters.cost_calls += 1
+                cost = graph.get_weight(u, v)
+
+                if dist[u] + cost < dist[v]:
+                    dist[v] = dist[u] + cost
+                    parent[v] = u
+                    any_changes = True
+
+        # Standard early stop if no edges were relaxed in this pass.
+        if not any_changes:
+            break
+
+        # (Optional) Literal translation of Assignment Problem 10 requirement:
+        # "For both algorithms stop early once you find the terminal vertex."
+        # If your instructor literally meant to break loop when target is found:
+        # if dist[target] != float('inf'):
+        #    break
+        # Note: Uncommenting the above lines breaks standard Bellman-Ford paths!
+
+    end_time = time.perf_counter()
+
+    # Reconstruct path
+    path = []
+    if dist[target] != float('inf'):
+        curr = target
+        while curr is not None:
+            path.append(curr)
+            curr = parent.get(curr)
+        path.reverse()
+
+    return {
+        'cost': dist.get(target, float('inf')),
+        'path': path,
+        'time_ms': (end_time - start_time) * 1000,
+        'counters': counters
+    }
+
+
+# --- ITERATORS ---
+# (Keeping your original iterators)
 class BFS_iter:
     def __init__(self, graph, start_vertex):
-        """BFS Iterator running in O(e)[cite: 80]."""
         self.graph = graph
         self.start_vertex = start_vertex
         self.first()
 
     def first(self):
-        """Sets the iterator on the first vertex[cite: 72]."""
         if self.start_vertex not in self.graph.get_vertices():
             raise ValueError("Start vertex not found.")
         self.queue = [self.start_vertex]
@@ -225,12 +371,10 @@ class BFS_iter:
                 self.queue.append(neighbor)
 
     def get_current(self):
-        """Returns current vertex. Raises error if invalid[cite: 72, 73]."""
         if not self.valid(): raise ValueError("Iterator is invalid.")
         return self.current
 
     def next(self):
-        """Goes to the next vertex[cite: 74]."""
         if not self.valid(): raise ValueError("Iterator is invalid.")
         if not self.queue:
             self.current = None
@@ -239,11 +383,9 @@ class BFS_iter:
         self._prepare_next()
 
     def valid(self):
-        """Returns True if the iterator is valid[cite: 75]."""
         return self.current is not None
 
     def get_path_length(self):
-        """Returns the path length and path from the initial vertex[cite: 81, 84]."""
         if not self.valid(): raise ValueError("Iterator is invalid.")
         path = []
         curr = self.current
@@ -324,6 +466,7 @@ def run_test_menu():
         print("8. Run BFS Traversal")
         print("9. Run DFS Traversal")
         print("10. Load Graph from File")
+        print("11. Run Assignment 3 Problem 10 (Bellman-Ford & A*)")
         print("0. Exit")
 
         choice = input("\nSelect an operation: ")
@@ -388,9 +531,38 @@ def run_test_menu():
                     iterator.next()
 
             elif choice == '10':
-                filename = input("Enter filename (e.g., graph.txt): ")
+                filename = input("Enter filename (e.g., positives_1_v10_e40.txt): ")
                 graph = Graph.create_from_file(filename)
                 print(f"Graph loaded successfully. {graph.get_v()} vertices, {graph.get_e()} edges.")
+
+            elif choice == '11':
+                if not graph.get_vertices():
+                    print("Please load a graph using Option 10 first.")
+                    continue
+
+                start = input("Enter starting vertex (e.g., '1'): ")
+                target = input("Enter terminal vertex (e.g., '10'): ")
+                pos_file = input("Enter positions filename (e.g., positives_1_vertex_positions.txt): ")
+
+                positions = load_positions(pos_file)
+
+                print(f"\nMinimum cost walk {start} to {target}:")
+
+                # Run the two algorithms
+                res_astar = a_star(graph, start, target, positions)
+                res_bf = bellman_ford(graph, start, target)
+
+                # Format printing
+                print(
+                    f"A*: time: {res_astar['time_ms']:.2f}ms, cost: {res_astar['cost']}, path: {', '.join(map(str, res_astar['path']))}")
+                print(
+                    f"Bellman-Ford: time: {res_bf['time_ms']:.2f}ms, cost: {res_bf['cost']}, path: {', '.join(map(str, res_bf['path']))}")
+
+                print("\nComparison:")
+                print(f"{'':<15} {'g.cost':<10} {'pq.push':<10} {'pq.pop':<10}")
+                print(
+                    f"{'A*':<15} {res_astar['counters'].cost_calls:<10} {res_astar['counters'].pq_push:<10} {res_astar['counters'].pq_pop:<10}")
+                print(f"{'Bellman-Ford':<15} {res_bf['counters'].cost_calls:<10} {'N/A':<10} {'N/A':<10}")
 
             elif choice == '0':
                 print("Exiting test menu.")
