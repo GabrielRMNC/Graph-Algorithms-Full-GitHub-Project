@@ -2,7 +2,7 @@ import os
 import time
 import math
 import heapq
-
+from collections import deque
 
 class Node:
     def __init__(self, label):
@@ -447,6 +447,139 @@ class DFS_iter:
         return self.distance[self.current], path
 
 
+class DSU:
+    """
+    Disjoint Set Union (Union-Find) data structure to detect cycles
+    during Kruskal's Algorithm.
+
+    Space Complexity: O(V) where V is the number of vertices,
+                      since we store parent and rank dictionaries for each vertex.
+    """
+
+    def __init__(self, vertices):
+        """
+        Time Complexity: O(V) to initialize the sets.
+        """
+        self.parent = {v: v for v in vertices}
+        self.rank = {v: 0 for v in vertices}
+
+    def find(self, item):
+        """
+        Finds the representative of the set that 'item' belongs to.
+        Uses path compression to flatten the structure of the tree.
+
+        Time Complexity: Amortized O(α(V)), where α is the Inverse Ackermann function.
+                         For all practical purposes, this operates in O(1) time.
+        """
+        if self.parent[item] == item:
+            return item
+        self.parent[item] = self.find(self.parent[item])
+        return self.parent[item]
+
+    def union(self, set1, set2):
+        """
+        Unions two sets based on their rank.
+
+        Time Complexity: Amortized O(α(V)), effectively O(1).
+        """
+        root1 = self.find(set1)
+        root2 = self.find(set2)
+
+        if root1 != root2:
+            # Union by rank keeps the tree shallow
+            if self.rank[root1] > self.rank[root2]:
+                self.parent[root2] = root1
+            elif self.rank[root1] < self.rank[root2]:
+                self.parent[root1] = root2
+            else:
+                self.parent[root2] = root1
+                self.rank[root1] += 1
+            return True
+        return False
+
+
+def kruskal_mst(graph):
+    """
+    Constructs a minimal spanning tree of the graph using Kruskal's algorithm.
+    Returns the MST (as a new Graph object) and the total cost.
+
+    Time Complexity:
+        - Extracting edges: O(V + E)
+        - Sorting edges: O(E log E)
+        - DSU operations (Find/Union): O(E * α(V))
+        - Overall Time Complexity: O(E log E) or O(E log V) since E <= V^2
+
+    Space Complexity: O(V + E) for storing the edges list, the DSU structure,
+                      and the resulting MST graph.
+    """
+    if graph.directed:
+        raise ValueError("Graph must be undirected to find an MST.")
+
+    edges = []
+    visited_edges = set()
+
+    # Extract all edges from the graph
+    for u in graph.get_vertices():
+        for v in graph.neighbors(u):
+            # Use sorted tuple to ensure we don't process undirected edges twice
+            edge_id = tuple(sorted((u, v)))
+            if edge_id not in visited_edges:
+                visited_edges.add(edge_id)
+                weight = graph.get_weight(u, v) if graph.weighted else 1
+                edges.append((weight, u, v))
+
+    # Sort edges by weight in ascending order
+    edges.sort(key=lambda x: x[0])
+
+    dsu = DSU(graph.get_vertices())
+    mst = Graph(directed=False, weighted=graph.weighted)
+
+    # Add all vertices to the MST
+    for v in graph.get_vertices():
+        mst.add_vertex(v)
+
+    mst_cost = 0
+
+    # Process edges and add them if they don't form a cycle
+    for weight, u, v in edges:
+        if dsu.union(u, v):
+            mst.add_edge(u, v, weight=weight)
+            mst_cost += weight
+
+    return mst, mst_cost
+
+
+def get_tree_height(tree, root):
+    """
+    Finds the height of a tree for a given root using BFS.
+
+    Time Complexity: O(V + E) where V is the number of vertices and E is the number of edges.
+                     Since it's a tree, E = V - 1, making the strictly bounded time O(V).
+
+    Space Complexity: O(V) to store the BFS queue and the visited set in the worst-case.
+    """
+    if root not in tree.get_vertices():
+        raise ValueError(f"Root vertex '{root}' not found in the tree.")
+
+    # BFS queue stores tuples of (current_vertex, current_depth)
+    queue = deque([(root, 0)])
+    visited = {root}
+    max_depth = 0
+
+    while queue:
+        current, depth = queue.popleft()
+
+        # Update the maximum depth found so far
+        if depth > max_depth:
+            max_depth = depth
+
+        for neighbor in tree.neighbors(current):
+            if neighbor not in visited:
+                visited.add(neighbor)
+                queue.append((neighbor, depth + 1))
+
+    return max_depth
+
 # --- INTERACTIVE CLI MENU ---
 
 def run_test_menu():
@@ -467,6 +600,7 @@ def run_test_menu():
         print("9. Run DFS Traversal")
         print("10. Load Graph from File")
         print("11. Run Assignment 3 Problem 10 (Bellman-Ford & A*)")
+        print("12. Run Assignment 4 Problem 4 (minimal spanning tree of the graph using Kruskal's algorithm + height of the tree for a given root, in O(e+v))")
         print("0. Exit")
 
         choice = input("\nSelect an operation: ")
@@ -563,6 +697,26 @@ def run_test_menu():
                 print(
                     f"{'A*':<15} {res_astar['counters'].cost_calls:<10} {res_astar['counters'].pq_push:<10} {res_astar['counters'].pq_pop:<10}")
                 print(f"{'Bellman-Ford':<15} {res_bf['counters'].cost_calls:<10} {'N/A':<10} {'N/A':<10}")
+
+            elif choice == '12':
+                if not graph.get_vertices():
+                    print("Please load or create a graph first.")
+                    continue
+                if graph.directed:
+                    print("Please convert the graph to undirected (Option 4) first.")
+                    continue
+
+                print("\n--- Assignment 4: Kruskal's MST & Tree Height ---")
+                try:
+                    mst, total_cost = kruskal_mst(graph)
+                    print(f"MST computed successfully. Total Cost: {total_cost}")
+                    print(f"MST Edges: {mst.get_e()} | MST Vertices: {mst.get_v()}")
+
+                    root = input("Enter root vertex to calculate tree height: ")
+                    height = get_tree_height(mst, root)
+                    print(f"The height of the tree from root '{root}' is: {height}")
+                except Exception as e:
+                    print(f"Error executing Assignment 4: {e}")
 
             elif choice == '0':
                 print("Exiting test menu.")
