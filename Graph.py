@@ -541,6 +541,99 @@ def get_tree_height(tree, root):
     return max_height
 
 
+def copy_graph(graph):
+    """
+    Creates a copy of the graph so that we can safely modify it during reduction.
+    """
+    g_copy = Graph(directed=graph.directed, weighted=graph.weighted)
+
+    # Copy vertices
+    for v in graph.get_vertices():
+        g_copy.add_vertex(v)
+
+    # Copy edges
+    for u in graph.get_vertices():
+        for v in graph.neighbors(u):
+            # The add_edge method safely handles double additions for undirected graphs
+            w = graph.get_weight(u, v) if graph.weighted else 0
+            g_copy.add_edge(u, v, w)
+
+    return g_copy
+
+
+def reduce_graph(graph):
+    """
+    Continuously contracts vertices of degree 2 to find a homeomorphic base graph.
+    Skips reductions that would create a multigraph.
+    """
+    # Find all initial candidates for degree-2 contraction.
+    # Note: Contracting a degree-2 vertex removes 1 edge and adds 1 edge to its
+    # neighbors, meaning the degree of the neighbors strictly remains unchanged.
+    # Therefore, no new degree-2 vertices can ever be created during this process.
+    deg2_candidates = [v for v in graph.get_vertices() if len(graph.neighbors(v)) == 2]
+
+    while deg2_candidates:
+        v = deg2_candidates.pop()
+
+        # Ensure the vertex hasn't been removed by some edge-case anomaly
+        if v not in graph.get_vertices():
+            continue
+
+        neighbors = graph.neighbors(v)
+
+        # Verify it still has exactly 2 neighbors
+        if len(neighbors) == 2:
+            u, w = neighbors[0], neighbors[1]
+
+            # Constraint: Do not reduce if it creates a multigraph
+            if not graph.is_edge(u, w):
+                graph.remove_vertex(v)
+                graph.add_edge(u, w)
+
+    return graph
+
+
+def is_complete_graph(graph):
+    """
+    Checks if a graph is a complete graph (K_n).
+    A complete graph must have exactly V*(V-1)/2 edges, and every vertex
+    must have a degree of V - 1.
+    """
+    V = graph.get_v()
+    if V == 0:
+        return False
+
+    E = graph.get_e()
+    expected_edges = (V * (V - 1)) // 2
+
+    if E != expected_edges:
+        return False
+
+    # Double check that every vertex is connected to every other vertex
+    for v in graph.get_vertices():
+        if len(graph.neighbors(v)) != V - 1:
+            return False
+
+    return True
+
+
+def check_homeomorphic_to_complete(graph):
+    """
+    Main function to solve Problem 2.
+    Checks if a given connected undirected graph is homeomorphic to a complete graph.
+    """
+    if graph.directed:
+        raise ValueError("The graph must be an undirected graph.")
+
+    # 1. Create a working copy
+    g_copy = copy_graph(graph)
+
+    # 2. Smooth/Contract all degree 2 vertices safely
+    g_reduced = reduce_graph(g_copy)
+
+    # 3. Check if the resulting base graph is complete
+    return is_complete_graph(g_reduced)
+
 # --- INTERACTIVE CLI MENU ---
 
 def run_test_menu():
@@ -562,6 +655,7 @@ def run_test_menu():
         print("10. Load Graph from File")
         print("11. Run Assignment 3 Problem 10 (Bellman-Ford & A*)")
         print("12. Run Assignment 4 Problem 4 (Kruskal & Tree Height)")
+        print("13. Run Assignment 5 Problem 2 (Homeomorphism to Complete Graph)")
         print("0. Exit")
 
         choice = input("\nSelect an operation: ")
@@ -680,6 +774,24 @@ def run_test_menu():
                     print(f"Height of the MST from root '{root}' is: {height}")
                 except ValueError as e:
                     print(f"Error: {e}")
+
+            elif choice == '13':
+                if not graph.get_vertices():
+                    print("Please load a graph using Option 10 first.")
+                    continue
+                if graph.directed:
+                    print("Error: The graph must be undirected. Use option 4 to toggle it.")
+                    continue
+
+                print("\n--- Running Assignment 5 Problem 2 ---")
+                try:
+                    result = check_homeomorphic_to_complete(graph)
+                    if result:
+                        print("Result: The graph IS homeomorphic to a complete graph.")
+                    else:
+                        print("Result: The graph IS NOT homeomorphic to a complete graph.")
+                except Exception as e:
+                    print(f"Error checking homeomorphism: {e}")
 
             elif choice == '0':
                 print("Exiting test menu.")
