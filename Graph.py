@@ -447,6 +447,100 @@ class DFS_iter:
         return self.distance[self.current], path
 
 
+def kruskal(graph):
+    """
+    Constructs a minimal spanning tree of an undirected connected graph using Kruskal's algorithm.
+    Implementation uses a dictionary of sets for O(e log e) complexity.
+    """
+    if graph.directed:
+        raise ValueError("Kruskal's algorithm requires an undirected graph.")
+
+    # t: a graph, the minimum spanning tree of g [cite: 156]
+    t = Graph(directed=False, weighted=True)
+
+    # t.set_vertices(g.get_vertices()) [cite: 169]
+    for v in graph.get_vertices():
+        t.add_vertex(v)
+
+    # create a list with all the edges [cite: 166]
+    edges = []
+    visited_edges = set()
+    for u in graph.get_vertices():
+        for v in graph.neighbors(u):
+            # Avoid duplicate edges in an undirected graph
+            edge_id = tuple(sorted((u, v)))
+            if edge_id not in visited_edges:
+                visited_edges.add(edge_id)
+                edges.append((u, v, graph.get_weight(u, v)))
+
+    # sort edges by their weight [cite: 168]
+    edges.sort(key=lambda x: x[2])
+
+    # We use a dictionary of sets. For each vertex, we have the tree (a set)
+    # that that vertex belongs to. [cite: 212-213]
+    forest = {v: {v} for v in graph.get_vertices()}
+
+    edges_added = 0
+    v_count = graph.get_v()
+
+    # while t has fewer than v-1 edges [cite: 172]
+    for u, v, weight in edges:
+        if edges_added >= v_count - 1:
+            break
+
+        # find_tree: searching the tree will become O(1), it is just searching
+        # for the key in a dictionary. [cite: 214]
+        tree_u = forest[u]
+        tree_v = forest[v]
+
+        # if tree_of_v1 != tree_of_v2 [cite: 178]
+        if tree_u is not tree_v:
+            # t.add_edge (v1, v2, weight) [cite: 180]
+            t.add_edge(u, v, weight=weight)
+            edges_added += 1
+
+            # make_union: From the smallest one add all element to the biggest one [cite: 222]
+            if len(tree_u) < len(tree_v):
+                tree_v.update(tree_u)
+                # change the value of the vertices from the smaller set to be a reference to a bigger set [cite: 224-225]
+                for node in tree_u:
+                    forest[node] = tree_v
+            else:
+                tree_u.update(tree_v)
+                for node in tree_v:
+                    forest[node] = tree_u
+
+    return t
+
+
+def get_tree_height(tree, root):
+    """
+    Finds the height of the tree for a given root in O(v+e).
+    The depth of a vertex is the length of the path from r to that vertex. [cite: 96]
+    The height of (T, r) is the length of the path from r to the leaf that is the furthest away. [cite: 95]
+    """
+    if root not in tree.get_vertices():
+        raise ValueError("Root vertex not found in the tree.")
+
+    # Using BFS to find the maximum depth in O(v+e) time
+    visited = {root}
+    queue = [(root, 0)]  # Queue stores tuples of (vertex, current_depth)
+    max_height = 0
+
+    while queue:
+        current, depth = queue.pop(0)
+
+        if depth > max_height:
+            max_height = depth
+
+        for neighbor in tree.neighbors(current):
+            if neighbor not in visited:
+                visited.add(neighbor)
+                queue.append((neighbor, depth + 1))
+
+    return max_height
+
+
 # --- INTERACTIVE CLI MENU ---
 
 def run_test_menu():
@@ -467,6 +561,7 @@ def run_test_menu():
         print("9. Run DFS Traversal")
         print("10. Load Graph from File")
         print("11. Run Assignment 3 Problem 10 (Bellman-Ford & A*)")
+        print("12. Run Assignment 4 Problem 4 (Kruskal & Tree Height)")
         print("0. Exit")
 
         choice = input("\nSelect an operation: ")
@@ -563,6 +658,28 @@ def run_test_menu():
                 print(
                     f"{'A*':<15} {res_astar['counters'].cost_calls:<10} {res_astar['counters'].pq_push:<10} {res_astar['counters'].pq_pop:<10}")
                 print(f"{'Bellman-Ford':<15} {res_bf['counters'].cost_calls:<10} {'N/A':<10} {'N/A':<10}")
+
+            elif choice == '12':
+                if not graph.get_vertices():
+                    print("Please load a graph using Option 10 first.")
+                    continue
+                if graph.directed:
+                    print("Error: The graph must be undirected to run Kruskal's.")
+                    continue
+
+                print("\n--- Running Kruskal's Algorithm ---")
+                mst = kruskal(graph)
+
+                print(f"Minimum Spanning Tree created with {mst.get_v()} vertices and {mst.get_e()} edges.")
+                total_cost = sum(mst.get_weight(u, v) for u in mst.get_vertices() for v in mst.neighbors(u)) / 2
+                print(f"Total Cost of MST: {total_cost}")
+
+                root = input("\nEnter root vertex to calculate tree height: ")
+                try:
+                    height = get_tree_height(mst, root)
+                    print(f"Height of the MST from root '{root}' is: {height}")
+                except ValueError as e:
+                    print(f"Error: {e}")
 
             elif choice == '0':
                 print("Exiting test menu.")
